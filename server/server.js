@@ -20,6 +20,7 @@ const matches = new Map();
 
 let nextPlayerId = 1;
 let nextMatchId = 1;
+let nextNotificationId = 1;
 
 // ==============================
 // NOTIFICATIONS
@@ -188,6 +189,7 @@ wss.on("connection", ws => {
     try {
       data = JSON.parse(raw.toString());
     } catch {
+      console.log("Message JSON invalide");
       return;
     }
 
@@ -272,7 +274,7 @@ wss.on("connection", ws => {
     if (data.type === "game-state") {
       if (!player.match) return;
 
-      // Seul l'hôte peut envoyer l'état officiel du jeu
+      // Seul l'hôte peut envoyer l'état officiel
       if (player.match.player1 !== player) return;
 
       const opponent = player.match.player2;
@@ -286,7 +288,7 @@ wss.on("connection", ws => {
     }
 
     // ==============================
-    // NOTIFICATIONS
+    // RÉCUPÉRER LES NOTIFICATIONS
     // ==============================
 
     if (data.type === "get-notifications") {
@@ -298,22 +300,81 @@ wss.on("connection", ws => {
       return;
     }
 
+    // ==============================
+    // AJOUTER UNE NOTIFICATION
+    // ==============================
+
     if (data.type === "admin-add-notification") {
       if (!data.notification) return;
 
-      serverNotifications.unshift(data.notification);
+      const notification = {
+        id:
+          data.notification.id ||
+          "notification-" + nextNotificationId++,
 
+        title:
+          data.notification.title ||
+          "Notification",
+
+        message:
+          data.notification.message ||
+          data.notification.text ||
+          "",
+
+        createdAt:
+          data.notification.createdAt ||
+          Date.now()
+      };
+
+      serverNotifications.unshift(notification);
+
+      console.log(
+        "Nouvelle notification :",
+        notification.title
+      );
+
+      // Envoie immédiatement la notification
+      // à TOUS les utilisateurs connectés
       broadcastNotifications();
 
       return;
     }
 
+    // ==============================
+    // SUPPRIMER UNE NOTIFICATION
+    // ==============================
+
     if (data.type === "admin-delete-notification") {
-      serverNotifications = serverNotifications.filter(
-        n => n.id !== data.id
-      );
+      if (!data.id) return;
+
+      serverNotifications =
+        serverNotifications.filter(
+          notification =>
+            notification.id !== data.id
+        );
 
       broadcastNotifications();
+
+      console.log(
+        "Notification supprimée :",
+        data.id
+      );
+
+      return;
+    }
+
+    // ==============================
+    // SUPPRIMER TOUTES LES NOTIFICATIONS
+    // ==============================
+
+    if (data.type === "admin-clear-notifications") {
+      serverNotifications = [];
+
+      broadcastNotifications();
+
+      console.log(
+        "Toutes les notifications ont été supprimées"
+      );
 
       return;
     }
@@ -327,7 +388,8 @@ wss.on("connection", ws => {
         type: "admin-stats",
         matchCount: matches.size,
         waitingPlayers: waitingPlayers.length,
-        connectedPlayers: wss.clients.size
+        connectedPlayers: wss.clients.size,
+        notificationsCount: serverNotifications.length
       });
 
       return;
@@ -349,13 +411,21 @@ wss.on("connection", ws => {
   // ==============================
 
   ws.on("close", () => {
-    console.log("Player disconnected:", player.id);
+    console.log(
+      "Player disconnected:",
+      player.id
+    );
 
     removeFromQueue(player);
     disconnectMatch(player);
   });
 
-  ws.on("error", () => {
+  ws.on("error", error => {
+    console.log(
+      "WebSocket error:",
+      error.message
+    );
+
     removeFromQueue(player);
     disconnectMatch(player);
   });
@@ -365,8 +435,12 @@ wss.on("connection", ws => {
 // DÉMARRAGE DU SERVEUR
 // ==============================
 
-httpServer.listen(PORT, "0.0.0.0", () => {
-  console.log(
-    `Rocket League.io server listening on port ${PORT}`
-  );
-});
+httpServer.listen(
+  PORT,
+  "0.0.0.0",
+  () => {
+    console.log(
+      `Rocket League.io server listening on port ${PORT}`
+    );
+  }
+);
