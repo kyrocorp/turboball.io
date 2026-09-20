@@ -2136,7 +2136,7 @@
     const content = $('shopContent');
     if (!content) return;
     if (shopItems.length === 0) {
-      content.innerHTML = '<div class="shop-empty">RIEN POUR L\\'INSTANT</div>';
+      content.innerHTML = '<div class="shop-empty">RIEN POUR L\'INSTANT</div>';
       return;
     }
     content.innerHTML = '<div class="shop-list">' + shopItems.map(item => `
