@@ -193,7 +193,285 @@
   let careerStats = { games: 0, goals: 0, saves: 0, touches: 0 };
   let careerTrackPrev = { goals: 0, saves: 0, touches: 0 };
   let creditsBalance = 100;
+// =====================================================
+// NOTIFICATIONS EN DIRECT - SERVEUR RENDER
+// =====================================================
 
+let liveNotificationSocket = null;
+let liveNotificationReconnectTimer = null;
+let liveNotificationReconnectDelay = 1000;
+let liveNotificationInitialized = false;
+const liveNotificationIds = new Set();
+
+const NOTIFICATION_WS_URL = SERVER_URL;
+
+function escapeNotificationHTML(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+function showLiveNotificationToast(notification) {
+  let container = document.getElementById('liveNotificationToastContainer');
+
+  if (!container) {
+    container = document.createElement('div');
+    container.id = 'liveNotificationToastContainer';
+
+    container.style.cssText = `
+      position: fixed;
+      top: 65px;
+      right: 15px;
+      z-index: 99999;
+      width: min(360px, calc(100vw - 30px));
+      pointer-events: none;
+    `;
+
+    document.body.appendChild(container);
+  }
+
+  const toast = document.createElement('div');
+
+  toast.style.cssText = `
+    background: rgba(5, 15, 28, 0.96);
+    border: 1px solid rgba(66, 207, 255, 0.65);
+    border-radius: 12px;
+    padding: 14px;
+    margin-bottom: 10px;
+    color: white;
+    box-shadow: 0 0 25px rgba(0, 191, 255, 0.25);
+    font-family: inherit;
+    pointer-events: auto;
+    animation: liveNotifIn 0.25s ease;
+  `;
+
+  toast.innerHTML = `
+    <div style="
+      font-size:9px;
+      letter-spacing:2px;
+      color:#43d9ff;
+      margin-bottom:6px;
+    ">
+      NOUVELLE NOTIFICATION
+    </div>
+
+    <div style="
+      font-size:14px;
+      font-weight:bold;
+      margin-bottom:6px;
+    ">
+      ${escapeNotificationHTML(notification.title)}
+    </div>
+
+    <div style="
+      font-size:11px;
+      line-height:1.5;
+      color:#b9c8d8;
+    ">
+      ${escapeNotificationHTML(notification.message)}
+    </div>
+  `;
+
+  container.appendChild(toast);
+
+  setTimeout(() => {
+    toast.style.opacity = '0';
+    toast.style.transform = 'translateX(20px)';
+    toast.style.transition = '0.25s ease';
+
+    setTimeout(() => toast.remove(), 300);
+  }, 5000);
+}
+
+function handleLiveNotificationsSync(serverList) {
+  if (!Array.isArray(serverList)) return;
+
+  // Première synchronisation :
+  // on charge les notifications existantes sans afficher de popup.
+  if (!liveNotificationInitialized) {
+    serverList.forEach(notification => {
+      if (notification && notification.id) {
+        liveNotificationIds.add(notification.id);
+      }
+    });
+
+    liveNotificationInitialized = true;
+    return;
+  }
+
+  serverList.forEach(serverNotification => {
+    if (!serverNotification || !serverNotification.id) return;
+
+    if (!liveNotificationIds.has(serverNotification.id)) {
+      liveNotificationIds.add(serverNotification.id);
+
+      const localNotification = {
+        id: serverNotification.id,
+        destination: serverNotification.destination || 'notification',
+        sender: serverNotification.sender || 'ÉQUIPE TURBOBALL',
+        title: serverNotification.title || 'Notification',
+        body: serverNotification.message || '',
+        date: serverNotification.createdAt
+          ? new Date(serverNotification.createdAt).toLocaleString('fr-FR')
+          : new Date().toLocaleString('fr-FR'),
+        credits: serverNotification.credits || 0,
+        claimed: false,
+        expiresAt: serverNotification.expiresAt || null
+      };
+
+      notifications.unshift(localNotification);
+
+      saveNotifications();
+      updateMailboxBadge();
+
+      showLiveNotificationToast(localNotification);
+    }
+  });
+}
+
+function scheduleLiveNotificationReconnect() {
+  if (liveNotificationReconnectTimer) return;
+
+  liveNotificationReconnectTimer = setTimeout(() => {
+    liveNotificationReconnectTimer = null;
+    connectLiveNotificationSocket();
+  }, liveNotificationReconnectDelay);
+
+  liveNotificationReconnectDelay = Math.min(
+    liveNotificationReconnectDelay * 2,
+    30000
+  );
+}
+
+function connectLiveNotificationSocket() {
+  if (
+    liveNotificationSocket &&
+    (
+      liveNotificationSocket.readyState === WebSocket.OPEN ||
+      liveNotificationSocket.readyState === WebSocket.CONNECTING
+    )
+  ) {
+    return;
+  }
+
+  try {
+    liveNotificationSocket = new WebSocket(NOTIFICATION_WS_URL);
+
+    liveNotificationSocket.onopen = () => {
+      liveNotificationReconnectDelay = 1000;
+
+      liveNotificationSocket.send(
+        JSON.stringify({
+          type: 'get-notifications'
+        })
+      );
+    };
+
+    liveNotificationSocket.onmessage = event => {
+      let data;
+
+      try {
+        data = JSON.parse(event.data);
+      } catch (e) {
+        return;
+      }
+
+      if (data.type === 'notifications-sync') {
+        handleLiveNotificationsSync(data.notifications);
+      }
+    };
+
+    liveNotificationSocket.onerror = () => {
+      try {
+        liveNotificationSocket.close();
+      } catch (e) {}
+    };
+
+    liveNotificationSocket.onclose = () => {
+      liveNotificationSocket = null;
+      scheduleLiveNotificationReconnect();
+    };
+
+  } catch (e) {
+    scheduleLiveNotificationReconnect();
+  }
+}
+
+function sendAdminNotificationToServer(notification) {
+  const send = () => {
+    if (
+      !liveNotificationSocket ||
+      liveNotificationSocket.readyState !== WebSocket.OPEN
+    ) {
+      return false;
+    }
+
+    liveNotificationSocket.send(
+      JSON.stringify({
+        type: 'admin-add-notification',
+        notification: {
+          id: notification.id,
+          title: notification.title,
+          message: notification.message,
+          destination: notification.destination,
+          sender: notification.sender,
+          credits: notification.credits || 0,
+          expiresAt: notification.expiresAt || null,
+          createdAt: notification.createdAt || Date.now()
+        }
+      })
+    );
+
+    return true;
+  };
+
+  if (send()) return;
+
+  connectLiveNotificationSocket();
+
+  let attempts = 0;
+
+  const retry = setInterval(() => {
+    attempts++;
+
+    if (send() || attempts >= 20) {
+      clearInterval(retry);
+    }
+  }, 250);
+}
+
+function deleteAdminNotificationFromServer(id) {
+  if (
+    !liveNotificationSocket ||
+    liveNotificationSocket.readyState !== WebSocket.OPEN
+  ) {
+    return;
+  }
+
+  liveNotificationSocket.send(
+    JSON.stringify({
+      type: 'admin-delete-notification',
+      id
+    })
+  );
+}
+
+connectLiveNotificationSocket();
+
+window.addEventListener('beforeunload', () => {
+  if (liveNotificationReconnectTimer) {
+    clearTimeout(liveNotificationReconnectTimer);
+  }
+
+  if (liveNotificationSocket) {
+    try {
+      liveNotificationSocket.close();
+    } catch (e) {}
+  }
+});
   /* =====================================================
      UTILITAIRES
   ===================================================== */
