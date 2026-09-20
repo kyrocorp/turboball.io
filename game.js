@@ -3189,4 +3189,249 @@
       ctx.fillStyle = '#7cf2ff';
       ctx.shadowColor = '#7cf2ff';
       ctx.shadowBlur = 14;
-   
+      ctx.fill();
+      ctx.shadowBlur = 0;
+    }
+
+    ctx.fillStyle = '#111';
+    ctx.fillRect(-CAR_CFG.width / 2 + 3, -CAR_CFG.height / 2 - 3, 10, 4);
+    ctx.fillRect(-CAR_CFG.width / 2 + 3, CAR_CFG.height / 2 - 1, 10, 4);
+    ctx.fillRect(CAR_CFG.width / 2 - 13, -CAR_CFG.height / 2 - 3, 10, 4);
+    ctx.fillRect(CAR_CFG.width / 2 - 13, CAR_CFG.height / 2 - 1, 10, 4);
+
+    ctx.fillStyle = mainColor;
+    ctx.shadowColor = mainColor;
+    ctx.shadowBlur = 12;
+    ctx.beginPath();
+    ctx.moveTo(-CAR_CFG.width / 2, -CAR_CFG.height / 2 + 4);
+    ctx.lineTo(CAR_CFG.width / 2 - 6, -CAR_CFG.height / 2);
+    ctx.lineTo(CAR_CFG.width / 2, 0);
+    ctx.lineTo(CAR_CFG.width / 2 - 6, CAR_CFG.height / 2);
+    ctx.lineTo(-CAR_CFG.width / 2, CAR_CFG.height / 2 - 4);
+    ctx.closePath();
+    ctx.fill();
+    ctx.shadowBlur = 0;
+
+    ctx.fillStyle = darkColor;
+    ctx.fillRect(-CAR_CFG.width / 2 + 4, -3, CAR_CFG.width - 14, 6);
+
+    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+    ctx.beginPath();
+    ctx.ellipse(2, 0, 8, CAR_CFG.height / 2 - 6, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.restore();
+  }
+
+  function drawBall(ball) {
+    ctx.beginPath();
+    ctx.arc(ball.x, ball.y, BALL_CFG.radius, 0, Math.PI * 2);
+    ctx.fillStyle = '#ffffff';
+    ctx.shadowColor = '#ffffff';
+    ctx.shadowBlur = 10;
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = 'rgba(0,0,0,0.2)';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+  }
+
+  function drawParticle(p) {
+    const alpha = Math.max(0, p.life / p.maxLife);
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+    ctx.fillStyle = p.color;
+    ctx.shadowColor = p.color;
+    ctx.shadowBlur = 8;
+    ctx.fill();
+    ctx.restore();
+  }
+
+  /* =====================================================
+     HUD
+  ===================================================== */
+
+  function updateHud() {
+    const myCar = world.cars[myPlayerNumber === 2 ? 1 : 0];
+    $('boostFill').style.width = myCar.boost + '%';
+    $('boostNumber').textContent = Math.round(myCar.boost);
+    $('speedNumber').textContent = Math.round(speedToKmh(myCar.speed || 0));
+  }
+
+  function updateBallSpeedDisplay() {
+    const el = $('ballSpeedNumber');
+    if (!el || !world) return;
+    const speed = speedToKmh(Math.hypot(world.ball.vx, world.ball.vy));
+    el.textContent = 'BALL: ' + Math.round(speed) + ' KM/H';
+  }
+
+  function updateScoreDisplay() {
+    $('blueScore').textContent = world.scoreBlue;
+    $('orangeScore').textContent = world.scoreOrange;
+  }
+
+  function updateStatsDisplay() {
+    if (!world) return;
+    $('statBlueGoals').textContent = world.stats.blue.goals;
+    $('statBlueTouches').textContent = world.stats.blue.touches;
+    $('statBlueSaves').textContent = world.stats.blue.saves;
+    $('statOrangeGoals').textContent = world.stats.orange.goals;
+    $('statOrangeTouches').textContent = world.stats.orange.touches;
+    $('statOrangeSaves').textContent = world.stats.orange.saves;
+  }
+
+  function updatePointsDisplay() {
+    if (!world || !myPlayerNumber) return;
+    const myTeam = teamOfPlayer(myPlayerNumber);
+    $('playerPoints').textContent = world.stats[myTeam].points;
+  }
+
+  function updateTimerDisplay() {
+    if (matchTimeLeft === Infinity) {
+      $('timer').textContent = '∞';
+      return;
+    }
+    const m = Math.floor(matchTimeLeft / 60);
+    const s = matchTimeLeft % 60;
+    $('timer').textContent = m + ':' + String(s).padStart(2, '0');
+  }
+
+  /* =====================================================
+     PAUSE
+  ===================================================== */
+
+  function togglePause() {
+    paused = !paused;
+    if (paused) show($('pauseMenu')); else hide($('pauseMenu'));
+  }
+
+  function updatePauseMenuForMode() {
+    const concedeBtn = $('concedeButton');
+    const mainMenuBtn = $('pauseMainMenuButton');
+    const cheatBtn = $('cheatSettingsMenuButton');
+
+    if (mode === 'online') {
+      show(concedeBtn);
+      hide(mainMenuBtn);
+      hide(cheatBtn);
+    } else {
+      hide(concedeBtn);
+      show(mainMenuBtn);
+      show(cheatBtn);
+    }
+  }
+
+  function initPauseMenu() {
+    const cheatBtn = document.createElement('button');
+    cheatBtn.id = 'cheatSettingsMenuButton';
+    cheatBtn.className = 'hidden';
+    cheatBtn.textContent = 'SETTINGS TRICHE';
+    $('concedeButton').insertAdjacentElement('afterend', cheatBtn);
+    cheatBtn.onclick = openCheatSettings;
+
+    $('resumeButton').onclick = () => { paused = false; hide($('pauseMenu')); };
+    $('pauseSettingsButton').onclick = () => openSettings('pauseMenu');
+    $('concedeButton').onclick = () => { hide($('pauseMenu')); show($('concedeConfirm')); };
+    $('pauseMainMenuButton').onclick = () => {
+      if (mode === 'online') return;
+      returnToMainMenu();
+    };
+
+    $('confirmConcedeButton').onclick = () => {
+      hide($('concedeConfirm'));
+      const winner = myPlayerNumber === 1 ? 'orange' : 'blue';
+      endMatch(winner);
+    };
+    $('cancelConcedeButton').onclick = () => {
+      hide($('concedeConfirm'));
+      show($('pauseMenu'));
+    };
+  }
+
+  /* =====================================================
+     FIN DE MATCH
+  ===================================================== */
+
+  function endMatch() {
+    stopGameLoop();
+    showResult(null, world.scoreBlue, world.scoreOrange);
+  }
+
+  function showResult(reason, scoreBlue, scoreOrange) {
+    let winnerText;
+    if (scoreBlue > scoreOrange) winnerText = 'BLUE WINS';
+    else if (scoreOrange > scoreBlue) winnerText = 'ORANGE WINS';
+    else winnerText = 'DRAW';
+
+    $('winnerDisplay').textContent = reason || winnerText;
+    $('finalBlueScore').textContent = scoreBlue;
+    $('finalOrangeScore').textContent = scoreOrange;
+    show($('resultScreen'));
+  }
+
+  function initResultScreen() {
+    $('playAgainButton').onclick = () => {
+      hide($('resultScreen'));
+      startMatch(mode);
+    };
+    $('mainMenuButton').onclick = () => {
+      hide($('resultScreen'));
+      returnToMainMenu();
+    };
+  }
+
+  function returnToMainMenu() {
+    stopGameLoop();
+    if (ws) { ws.close(); ws = null; }
+    hide($('pauseMenu'));
+    hide($('resultScreen'));
+    const mc = $('mobileControls');
+    if (mc) mc.remove();
+    showAdminFloatingUI();
+    hideMobileSettingsButton();
+    show($('mainMenu'));
+  }
+
+  /* =====================================================
+     HOW TO PLAY
+  ===================================================== */
+
+  function initHowToPlay() {
+    if ($('backButton')) {
+      $('backButton').onclick = () => {
+        hide($('howToPlayMenu'));
+        show($('mainMenu'));
+      };
+    }
+  }
+
+  /* =====================================================
+     INITIALISATION
+  ===================================================== */
+
+  function init() {
+    loadControls();
+    loadGamepadControls();
+    loadMobileLayout();
+    loadAdminData();
+    loadProfileData();
+    injectDynamicStyles();
+    injectBallSpeedDisplay();
+    injectStatsBar();
+    injectAdminUI();
+    injectMobileSettingsButton();
+    hide($('mainMenu'));
+    buildShopMenu();
+    buildCheatSettingsMenu();
+    buildSearchingOverlay();
+    initSettingsMenu();
+    initPauseMenu();
+    initResultScreen();
+    initHowToPlay();
+    buildDeviceMenu();
+  }
+
+  document.addEventListener('DOMContentLoaded', init);
+})();
