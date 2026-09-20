@@ -21,6 +21,29 @@ const matches = new Map();
 let nextPlayerId = 1;
 let nextMatchId = 1;
 
+// ==============================
+// NOTIFICATIONS
+// ==============================
+
+let serverNotifications = [];
+
+function broadcastNotifications() {
+  const payload = JSON.stringify({
+    type: "notifications-sync",
+    notifications: serverNotifications
+  });
+
+  wss.clients.forEach(client => {
+    if (client.readyState === WebSocket.OPEN) {
+      client.send(payload);
+    }
+  });
+}
+
+// ==============================
+// ENVOI DE DONNÉES
+// ==============================
+
 function send(player, data) {
   if (!player || !player.ws) return;
 
@@ -28,6 +51,10 @@ function send(player, data) {
     player.ws.send(JSON.stringify(data));
   }
 }
+
+// ==============================
+// FILE D'ATTENTE
+// ==============================
 
 function removeFromQueue(player) {
   const index = waitingPlayers.indexOf(player);
@@ -38,6 +65,10 @@ function removeFromQueue(player) {
 
   player.searching = false;
 }
+
+// ==============================
+// CRÉATION D'UN MATCH
+// ==============================
 
 function makeMatch(player1, player2) {
   const matchId = "match-" + nextMatchId++;
@@ -77,6 +108,10 @@ function makeMatch(player1, player2) {
   );
 }
 
+// ==============================
+// RECHERCHE D'UN ADVERSAIRE
+// ==============================
+
 function findOpponent(player) {
   for (let i = 0; i < waitingPlayers.length; i++) {
     const opponent = waitingPlayers[i];
@@ -87,13 +122,19 @@ function findOpponent(player) {
       !opponent.match
     ) {
       waitingPlayers.splice(i, 1);
+
       makeMatch(opponent, player);
+
       return true;
     }
   }
 
   return false;
 }
+
+// ==============================
+// DÉCONNEXION D'UN MATCH
+// ==============================
 
 function disconnectMatch(player) {
   const match = player.match;
@@ -118,6 +159,10 @@ function disconnectMatch(player) {
   }
 }
 
+// ==============================
+// CONNEXION D'UN JOUEUR
+// ==============================
+
 wss.on("connection", ws => {
   const player = {
     id: "player-" + nextPlayerId++,
@@ -133,6 +178,10 @@ wss.on("connection", ws => {
     playerId: player.id
   });
 
+  // ==============================
+  // MESSAGES DU JOUEUR
+  // ==============================
+
   ws.on("message", raw => {
     let data;
 
@@ -142,6 +191,10 @@ wss.on("connection", ws => {
       return;
     }
 
+    // ==============================
+    // PING
+    // ==============================
+
     if (data.type === "ping") {
       send(player, {
         type: "pong"
@@ -149,6 +202,10 @@ wss.on("connection", ws => {
 
       return;
     }
+
+    // ==============================
+    // RECHERCHE DE MATCH
+    // ==============================
 
     if (data.type === "find-match") {
       if (player.match) return;
@@ -174,6 +231,10 @@ wss.on("connection", ws => {
       return;
     }
 
+    // ==============================
+    // ANNULATION DE RECHERCHE
+    // ==============================
+
     if (data.type === "cancel-search") {
       removeFromQueue(player);
 
@@ -183,6 +244,10 @@ wss.on("connection", ws => {
 
       return;
     }
+
+    // ==============================
+    // INPUT DU JOUEUR
+    // ==============================
 
     if (data.type === "input") {
       if (!player.match) return;
@@ -200,10 +265,14 @@ wss.on("connection", ws => {
       return;
     }
 
+    // ==============================
+    // ÉTAT DU JEU
+    // ==============================
+
     if (data.type === "game-state") {
       if (!player.match) return;
 
-      // Only the host is allowed to send authoritative game state.
+      // Seul l'hôte peut envoyer l'état officiel du jeu
       if (player.match.player1 !== player) return;
 
       const opponent = player.match.player2;
@@ -216,12 +285,68 @@ wss.on("connection", ws => {
       return;
     }
 
+    // ==============================
+    // NOTIFICATIONS
+    // ==============================
+
+    if (data.type === "get-notifications") {
+      send(player, {
+        type: "notifications-sync",
+        notifications: serverNotifications
+      });
+
+      return;
+    }
+
+    if (data.type === "admin-add-notification") {
+      if (!data.notification) return;
+
+      serverNotifications.unshift(data.notification);
+
+      broadcastNotifications();
+
+      return;
+    }
+
+    if (data.type === "admin-delete-notification") {
+      serverNotifications = serverNotifications.filter(
+        n => n.id !== data.id
+      );
+
+      broadcastNotifications();
+
+      return;
+    }
+
+    // ==============================
+    // STATISTIQUES ADMIN
+    // ==============================
+
+    if (data.type === "admin-stats") {
+      send(player, {
+        type: "admin-stats",
+        matchCount: matches.size,
+        waitingPlayers: waitingPlayers.length,
+        connectedPlayers: wss.clients.size
+      });
+
+      return;
+    }
+
+    // ==============================
+    // QUITTER LE MATCH
+    // ==============================
+
     if (data.type === "leave-match") {
       disconnectMatch(player);
 
       return;
     }
   });
+
+  // ==============================
+  // FERMETURE DE LA CONNEXION
+  // ==============================
 
   ws.on("close", () => {
     console.log("Player disconnected:", player.id);
@@ -236,31 +361,12 @@ wss.on("connection", ws => {
   });
 });
 
+// ==============================
+// DÉMARRAGE DU SERVEUR
+// ==============================
+
 httpServer.listen(PORT, "0.0.0.0", () => {
   console.log(
     `Rocket League.io server listening on port ${PORT}`
   );
 });
-if (data.type === "get-notifications") {
-  send(player, { type: "notifications-sync", notifications: serverNotifications });
-  return;
-}
-
-if (data.type === "admin-add-notification") {
-  serverNotifications.unshift(data.notification);
-  broadcastNotifications();
-  return;
-}
-
-if (data.type === "admin-delete-notification") {
-  serverNotifications = serverNotifications.filter(n => n.id !== data.id);
-  broadcastNotifications();
-  return;
-}
-if (data.type === "admin-stats") {
-  send(player, {
-    type: "admin-stats",
-    matchCount: matches.size
-  });
-  return;
-}
