@@ -241,6 +241,22 @@ httpServer.listen(PORT, "0.0.0.0", () => {
     `Rocket League.io server listening on port ${PORT}`
   );
 });
+if (data.type === "get-notifications") {
+  send(player, { type: "notifications-sync", notifications: serverNotifications });
+  return;
+}
+
+if (data.type === "admin-add-notification") {
+  serverNotifications.unshift(data.notification);
+  broadcastNotifications();
+  return;
+}
+
+if (data.type === "admin-delete-notification") {
+  serverNotifications = serverNotifications.filter(n => n.id !== data.id);
+  broadcastNotifications();
+  return;
+}
 if (data.type === "admin-stats") {
   send(player, {
     type: "admin-stats",
