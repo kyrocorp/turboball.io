@@ -91,6 +91,36 @@
 
   const GAMEPAD_DEADZONE = 0.18;
 
+  const GAMEPAD_BUTTON_NAMES = {
+    0: 'CROIX / A',
+    1: 'ROND / B',
+    2: 'CARRÉ / X',
+    3: 'TRIANGLE / Y',
+    4: 'L1',
+    5: 'R1',
+    6: 'L2',
+    7: 'R2',
+    8: 'SELECT',
+    9: 'START',
+    10: 'STICK G',
+    11: 'STICK D',
+    12: 'HAUT',
+    13: 'BAS',
+    14: 'GAUCHE',
+    15: 'DROITE'
+  };
+  function gamepadButtonLabel(index) {
+    return GAMEPAD_BUTTON_NAMES[index] || ('BOUTON ' + index);
+  }
+
+  const CREDIT_EXPIRY_OPTIONS = [
+    { value: '1', label: '1 JOUR', ms: 24 * 60 * 60 * 1000 },
+    { value: '3', label: '3 JOURS', ms: 3 * 24 * 60 * 60 * 1000 },
+    { value: '7', label: '7 JOURS', ms: 7 * 24 * 60 * 60 * 1000 },
+    { value: '30', label: '30 JOURS', ms: 30 * 24 * 60 * 60 * 1000 },
+    { value: 'never', label: 'JAMAIS', ms: null }
+  ];
+
   /* =====================================================
      ETAT GLOBAL
   ===================================================== */
@@ -109,6 +139,15 @@
     right: 'd',
     boost: ' '
   };
+
+  const gamepadControls = {
+    forward: 7,  // R2
+    backward: 6, // L2
+    boost: 0,    // Croix / X
+    pause: 9     // Start
+  };
+  let gamepadRebindAction = null;
+  let gamepadRebindPollId = null;
 
   const keysDown = {};
   const touchInput = { dx: 0, dy: 0, boost: false };
@@ -147,11 +186,13 @@
   let mailboxActiveTab = 'notification';
   let adminActiveTab = 'boutique';
   let notifDestinationChoice = 'notification';
+  let creditsNotifDestinationChoice = 'notification';
 
-  // Profil / carrière
+  // Profil / carrière / argent
   let profileName = 'Joueur';
   let careerStats = { games: 0, goals: 0, saves: 0, touches: 0 };
   let careerTrackPrev = { goals: 0, saves: 0, touches: 0 };
+  let creditsBalance = 100;
 
   /* =====================================================
      UTILITAIRES
@@ -168,6 +209,17 @@
 
   function saveControls() {
     try { localStorage.setItem('turboball_controls', JSON.stringify(controls)); } catch (e) {}
+  }
+
+  function loadGamepadControls() {
+    try {
+      const saved = JSON.parse(localStorage.getItem('turboball_gamepad_controls'));
+      if (saved) Object.assign(gamepadControls, saved);
+    } catch (e) {}
+  }
+
+  function saveGamepadControls() {
+    try { localStorage.setItem('turboball_gamepad_controls', JSON.stringify(gamepadControls)); } catch (e) {}
   }
 
   function loadMobileLayout() {
@@ -192,6 +244,10 @@
       const saved = JSON.parse(localStorage.getItem('turboball_career_stats'));
       if (saved) careerStats = Object.assign({ games: 0, goals: 0, saves: 0, touches: 0 }, saved);
     } catch (e) {}
+    try {
+      const savedCredits = localStorage.getItem('turboball_credits');
+      if (savedCredits !== null) creditsBalance = parseInt(savedCredits, 10) || 0;
+    } catch (e) {}
   }
 
   function saveProfileName() {
@@ -200,6 +256,10 @@
 
   function saveCareerStats() {
     try { localStorage.setItem('turboball_career_stats', JSON.stringify(careerStats)); } catch (e) {}
+  }
+
+  function saveCredits() {
+    try { localStorage.setItem('turboball_credits', String(creditsBalance)); } catch (e) {}
   }
 
   function show(el) { el.classList.remove('hidden'); }
@@ -215,7 +275,7 @@
   }
 
   /* =====================================================
-     VISIBILITE UI ADMIN / BOITE AUX LETTRES
+     VISIBILITE UI ADMIN / BOITE AUX LETTRES / SETTINGS MOBILE
   ===================================================== */
 
   function hideAdminFloatingUI() {
@@ -237,6 +297,17 @@
     } else {
       if (adminBtn) show(adminBtn);
     }
+  }
+
+  function showMobileSettingsButtonIfNeeded() {
+    const btn = $('mobileSettingsBtn');
+    if (!btn) return;
+    if (deviceType === 'mobile') show(btn); else hide(btn);
+  }
+
+  function hideMobileSettingsButton() {
+    const btn = $('mobileSettingsBtn');
+    if (btn) hide(btn);
   }
 
   /* =====================================================
@@ -285,6 +356,15 @@
         font-size: 11px;
         letter-spacing: 1px;
         color: #dce8f2;
+      }
+      .profile-banner .profile-credits {
+        font-size: 10px;
+        letter-spacing: 0.5px;
+        color: #baff35;
+        background: rgba(186,255,53,0.1);
+        border: 1px solid rgba(186,255,53,0.3);
+        padding: 3px 8px;
+        border-radius: 12px;
       }
 
       #mainMenuColumns {
@@ -448,6 +528,24 @@
         box-shadow: 0 0 25px #00bfff;
       }
 
+      #mobileSettingsBtn {
+        position: fixed;
+        top: 14px;
+        right: 14px;
+        width: 38px;
+        height: 38px;
+        border-radius: 50%;
+        padding: 0;
+        font-size: 15px;
+        line-height: 1;
+        z-index: 1900;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border: 1px solid rgba(90, 200, 255, 0.4);
+        background: rgba(4, 10, 20, 0.85);
+      }
+
       #mobileLayoutEditor { margin-top: 15px; }
       #mobileLayoutEditor .layout-hint {
         font-size: 10px;
@@ -492,6 +590,39 @@
         aspect-ratio: 1;
         background: rgba(255, 157, 46, 0.25);
         border: 2px solid #ff9d2e;
+      }
+
+      #gamepadControlsEditor { margin-top: 15px; text-align: left; }
+      #gamepadControlsEditor .gp-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 14px;
+        padding: 12px 0;
+        border-bottom: 1px solid rgba(255,255,255,0.08);
+      }
+      #gamepadControlsEditor .gp-row span {
+        font-size: 11px;
+        letter-spacing: 1px;
+        color: #dce8f2;
+      }
+      #gamepadControlsEditor .gp-key-button {
+        min-width: 140px;
+        padding: 10px 14px;
+        font-size: 10px;
+        border-radius: 6px;
+      }
+      #gamepadControlsEditor .gp-key-button.waiting {
+        color: #baff35;
+        border-color: #baff35;
+        animation: keyWaiting 0.8s ease-in-out infinite alternate;
+      }
+      #gamepadControlsEditor .gp-hint {
+        font-size: 10px;
+        color: #91a2b4;
+        letter-spacing: 1px;
+        text-align: center;
+        margin-bottom: 12px;
       }
 
       #cheatSettingsMenu .cheat-row {
@@ -769,6 +900,7 @@
         font-weight: 900;
         color: #43d9ff;
       }
+      .live-count-box.credits .count { color: #baff35; }
 
       #logoutAdminBtn {
         border-color: #ff5b3d;
@@ -805,6 +937,30 @@
         font-size: 11px;
         color: #b9c8d8;
         line-height: 1.5;
+      }
+      .notif-item .notif-claim-row {
+        margin-top: 10px;
+        padding-top: 10px;
+        border-top: 1px dashed rgba(255,255,255,0.12);
+      }
+      .notif-item .claim-btn {
+        width: 100%;
+        border-radius: 20px;
+        padding: 10px;
+        font-size: 10px;
+        border-color: #baff35;
+        color: #baff35;
+      }
+      .notif-item .claim-btn:hover {
+        background: #baff35;
+        color: #04160a;
+        box-shadow: 0 0 20px rgba(186,255,53,0.5);
+      }
+      .notif-item .claim-status {
+        font-size: 10px;
+        letter-spacing: 1px;
+        color: #7d8ca0;
+        text-align: center;
       }
       .notif-empty {
         text-align: center;
@@ -860,27 +1016,29 @@
     <b>P</b> Pause
   `;
 
-  const GAMEPAD_CONTROLS_HTML = `
-    <span>MANETTE</span>
-    <b>STICK G</b> Direction
-    <b>R2</b> Avancer
-    <b>L2</b> Reculer
-    <b>X</b> Boost
-    <b>START</b> Pause
-  `;
+  function gamepadControlsHtml() {
+    return `
+      <span>MANETTE</span>
+      <b>STICK G</b> Direction
+      <b>${gamepadButtonLabel(gamepadControls.forward)}</b> Avancer
+      <b>${gamepadButtonLabel(gamepadControls.backward)}</b> Reculer
+      <b>${gamepadButtonLabel(gamepadControls.boost)}</b> Boost
+      <b>${gamepadButtonLabel(gamepadControls.pause)}</b> Pause
+    `;
+  }
 
   function updateControlsLegend() {
     const legendEl = document.querySelector('#bottomHud #controls');
     if (!legendEl) return;
     if (deviceType === 'gamepad') {
-      legendEl.innerHTML = GAMEPAD_CONTROLS_HTML;
+      legendEl.innerHTML = gamepadControlsHtml();
     } else {
       legendEl.innerHTML = PC_CONTROLS_HTML;
     }
   }
 
   /* =====================================================
-     PROFIL / CARRIÈRE
+     PROFIL / CARRIÈRE / CRÉDITS
   ===================================================== */
 
   function initialsFromName(name) {
@@ -892,8 +1050,10 @@
   function renderProfileBanner() {
     const nameEl = document.querySelector('.profile-banner .profile-name');
     const avatarEl = document.querySelector('.profile-banner .avatar');
+    const creditsEl = document.querySelector('.profile-banner .profile-credits');
     if (nameEl) nameEl.textContent = profileName;
     if (avatarEl) avatarEl.textContent = initialsFromName(profileName);
+    if (creditsEl) creditsEl.textContent = creditsBalance + ' CR';
   }
 
   function openProfileModal() {
@@ -932,6 +1092,12 @@
     if (!container) return;
     container.innerHTML = `
       <div class="admin-section-content">
+        <div class="admin-block">
+          <div class="live-count-box credits">
+            <div class="count">${creditsBalance}</div>
+            <div style="font-size:9px; color:#7d8ca0; letter-spacing:1px; margin-top:5px;">CRÉDITS</div>
+          </div>
+        </div>
         <div class="admin-block">
           <div class="live-count-box">
             <div class="count">${careerStats.games}</div>
@@ -1042,6 +1208,24 @@
     updateMailboxBadge();
   }
 
+  function injectMobileSettingsButton() {
+    const btn = document.createElement('button');
+    btn.id = 'mobileSettingsBtn';
+    btn.className = 'secondary-button hidden';
+    btn.textContent = '⚙';
+    document.body.appendChild(btn);
+
+    btn.onclick = () => {
+      if (!running) return;
+      if (!paused) {
+        paused = true;
+        show($('pauseMenu'));
+      }
+      hide($('pauseMenu'));
+      openSettings('pauseMenu');
+    };
+  }
+
   function openAdminCodeModal() {
     const div = document.createElement('div');
     div.id = 'adminCodeModal';
@@ -1101,6 +1285,7 @@
           <button data-tab="boutique" class="secondary-button">BOUTIQUE</button>
           <button data-tab="general" class="secondary-button">GÉNÉRAL</button>
           <button data-tab="annonce" class="secondary-button">ANNONCE</button>
+          <button data-tab="argent" class="secondary-button">ARGENT</button>
         </div>
         <div id="adminTabContent"></div>
         <button id="adminPanelCloseBtn" class="secondary-button full" style="margin-top:20px;">FERMER</button>
@@ -1238,7 +1423,10 @@
           sender: destination === 'upcoming' ? 'ÉQUIPE TURBOBALL — À VENIR' : 'ÉQUIPE TURBOBALL',
           title,
           body,
-          date: new Date().toLocaleString('fr-FR')
+          date: new Date().toLocaleString('fr-FR'),
+          credits: 0,
+          claimed: false,
+          expiresAt: null
         });
         saveNotifications();
         updateMailboxBadge();
@@ -1248,13 +1436,105 @@
       };
 
       renderAdminMsgList(content.querySelector('#adminMsgList'));
+
+    } else if (adminActiveTab === 'argent') {
+      creditsNotifDestinationChoice = 'notification';
+      content.innerHTML = `
+        <div class="admin-section-content">
+          <div class="admin-block">
+            <div class="live-count-box credits">
+              <div class="count" id="adminCurrentBalance">${creditsBalance}</div>
+              <div style="font-size:9px; color:#7d8ca0; letter-spacing:1px; margin-top:5px;">SOLDE ACTUEL (CRÉDITS)</div>
+            </div>
+          </div>
+
+          <div class="admin-block">
+            <h3>ENVOYER DIRECTEMENT</h3>
+            <input type="text" id="directRecipient" placeholder="Nom du destinataire">
+            <input type="number" id="directAmount" placeholder="Montant en crédits" min="1">
+            <button id="sendDirectCreditsBtn" class="main-button full">ENVOYER</button>
+          </div>
+
+          <div class="admin-block">
+            <h3>ENVOYER PAR NOTIFICATION (À RÉCUPÉRER)</h3>
+            <input type="number" id="notifCreditsAmount" placeholder="Montant en crédits" min="1">
+            <input type="text" id="notifCreditsTitle" placeholder="Titre" value="Vous avez reçu des crédits !">
+            <textarea id="notifCreditsBody" placeholder="Message"></textarea>
+
+            <span class="dest-label">DESTINATION DANS LA BOÎTE AUX LETTRES</span>
+            <div class="destination-toggle">
+              <button type="button" class="dest-btn active" data-dest="notification">NOTIFI-<br>CATION</button>
+              <button type="button" class="dest-btn" data-dest="upcoming">À VENIR</button>
+            </div>
+
+            <span class="dest-label">DURÉE DE DISPONIBILITÉ</span>
+            <select id="notifCreditsExpiry">
+              ${CREDIT_EXPIRY_OPTIONS.map(o => `<option value="${o.value}">${o.label}</option>`).join('')}
+            </select>
+
+            <button id="sendCreditsNotifBtn" class="main-button full">ENVOYER LA NOTIFICATION</button>
+          </div>
+        </div>
+      `;
+
+      content.querySelector('#sendDirectCreditsBtn').onclick = () => {
+        const recipient = content.querySelector('#directRecipient').value.trim();
+        const amount = parseInt(content.querySelector('#directAmount').value, 10);
+        if (!recipient || isNaN(amount) || amount <= 0) return;
+
+        creditsBalance += amount;
+        saveCredits();
+        renderProfileBanner();
+        content.querySelector('#adminCurrentBalance').textContent = creditsBalance;
+
+        content.querySelector('#directRecipient').value = '';
+        content.querySelector('#directAmount').value = '';
+        content.querySelector('#directAmount').placeholder = `Envoyé ${amount} CR à ${recipient} !`;
+      };
+
+      const creditsDestButtons = content.querySelectorAll('.dest-btn');
+      creditsDestButtons.forEach(btn => {
+        btn.onclick = () => {
+          creditsNotifDestinationChoice = btn.dataset.dest;
+          creditsDestButtons.forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+        };
+      });
+
+      content.querySelector('#sendCreditsNotifBtn').onclick = () => {
+        const amount = parseInt(content.querySelector('#notifCreditsAmount').value, 10);
+        const title = content.querySelector('#notifCreditsTitle').value.trim();
+        const body = content.querySelector('#notifCreditsBody').value.trim();
+        const expiryVal = content.querySelector('#notifCreditsExpiry').value;
+        if (isNaN(amount) || amount <= 0 || !title || !body) return;
+
+        const expiryOption = CREDIT_EXPIRY_OPTIONS.find(o => o.value === expiryVal);
+        const expiresAt = expiryOption && expiryOption.ms ? Date.now() + expiryOption.ms : null;
+
+        notifications.unshift({
+          id: 'notif_' + Date.now(),
+          destination: creditsNotifDestinationChoice,
+          sender: creditsNotifDestinationChoice === 'upcoming' ? 'ÉQUIPE TURBOBALL — À VENIR' : 'ÉQUIPE TURBOBALL',
+          title,
+          body,
+          date: new Date().toLocaleString('fr-FR'),
+          credits: amount,
+          claimed: false,
+          expiresAt
+        });
+        saveNotifications();
+        updateMailboxBadge();
+
+        content.querySelector('#notifCreditsAmount').value = '';
+        content.querySelector('#notifCreditsBody').value = '';
+      };
     }
   }
 
   function renderAdminShopList(container) {
     if (!container) return;
     if (shopItems.length === 0) {
-      container.innerHTML = '<div class="shop-empty">AUCUN ARTICLE POUR L\'INSTANT</div>';
+      container.innerHTML = '<div class="shop-empty">AUCUN ARTICLE POUR L\\'INSTANT</div>';
       return;
     }
     container.innerHTML = shopItems.map(item => `
@@ -1299,7 +1579,7 @@
     container.innerHTML = notifications.map(n => `
       <div class="admin-msg-row ${n.destination === 'upcoming' ? 'upcoming' : ''}" data-id="${n.id}">
         <div class="row-info">
-          <div class="msg-tag">${n.destination === 'upcoming' ? 'À VENIR' : 'NOTIFICATION'} · ${n.date}</div>
+          <div class="msg-tag">${n.destination === 'upcoming' ? 'À VENIR' : 'NOTIFICATION'} · ${n.date}${n.credits ? ' · ' + n.credits + ' CR' : ''}</div>
           <div class="msg-title">${n.title}</div>
         </div>
         <button class="secondary-button delete-btn delete-msg-btn">SUPPRIMER</button>
@@ -1420,17 +1700,49 @@
     const filtered = notifications.filter(n => n.destination === mailboxActiveTab);
 
     if (filtered.length === 0) {
-      content.innerHTML = '<div class="notif-empty">AUCUN MESSAGE POUR L\'INSTANT</div>';
+      content.innerHTML = '<div class="notif-empty">AUCUN MESSAGE POUR L\\'INSTANT</div>';
       return;
     }
 
-    content.innerHTML = filtered.map(n => `
-      <div class="notif-item ${n.destination === 'upcoming' ? 'upcoming' : ''}">
-        <div class="notif-meta">${n.sender} · ${n.date}</div>
-        <div class="notif-title">${n.title}</div>
-        <div class="notif-body">${n.body}</div>
-      </div>
-    `).join('');
+    content.innerHTML = filtered.map(n => {
+      let claimHtml = '';
+      if (n.credits && n.credits > 0) {
+        const expired = n.expiresAt !== null && n.expiresAt !== undefined && Date.now() > n.expiresAt;
+        if (n.claimed) {
+          claimHtml = `<div class="notif-claim-row"><div class="claim-status">CRÉDITS DÉJÀ RÉCUPÉRÉS</div></div>`;
+        } else if (expired) {
+          claimHtml = `<div class="notif-claim-row"><div class="claim-status">OFFRE EXPIRÉE</div></div>`;
+        } else {
+          claimHtml = `<div class="notif-claim-row"><button class="secondary-button claim-btn" data-id="${n.id}">RÉCUPÉRER ${n.credits} CRÉDITS</button></div>`;
+        }
+      }
+      return `
+        <div class="notif-item ${n.destination === 'upcoming' ? 'upcoming' : ''}">
+          <div class="notif-meta">${n.sender} · ${n.date}</div>
+          <div class="notif-title">${n.title}</div>
+          <div class="notif-body">${n.body}</div>
+          ${claimHtml}
+        </div>
+      `;
+    }).join('');
+
+    content.querySelectorAll('.claim-btn').forEach(btn => {
+      btn.onclick = () => {
+        const id = btn.dataset.id;
+        const n = notifications.find(x => x.id === id);
+        if (!n || n.claimed) return;
+        const expired = n.expiresAt !== null && n.expiresAt !== undefined && Date.now() > n.expiresAt;
+        if (expired) return;
+
+        creditsBalance += n.credits;
+        saveCredits();
+        renderProfileBanner();
+
+        n.claimed = true;
+        saveNotifications();
+        renderMailboxContent(panelEl);
+      };
+    });
   }
 
   /* =====================================================
@@ -1481,6 +1793,7 @@
       <div class="profile-banner" id="profileBanner">
         <div class="avatar">${initialsFromName(profileName)}</div>
         <span class="profile-name">${profileName}</span>
+        <span class="profile-credits">${creditsBalance} CR</span>
       </div>
 
       <div class="logo">
@@ -1506,6 +1819,7 @@
 
     show(mainMenu);
     showAdminFloatingUI();
+    hideMobileSettingsButton();
 
     $('profileBanner').onclick = openProfileModal;
 
@@ -1528,23 +1842,31 @@
     $('boostKeyButton').textContent = controls.boost === ' ' ? 'SPACE' : controls.boost.toUpperCase();
   }
 
+  function refreshGamepadLabels() {
+    if (!$('gamepadControlsEditor')) return;
+    $('gpForwardBtn').textContent = gamepadButtonLabel(gamepadControls.forward);
+    $('gpBackwardBtn').textContent = gamepadButtonLabel(gamepadControls.backward);
+    $('gpBoostBtn').textContent = gamepadButtonLabel(gamepadControls.boost);
+    $('gpPauseBtn').textContent = gamepadButtonLabel(gamepadControls.pause);
+  }
+
   function refreshSettingsVisibility() {
     const keyboardSection = document.querySelector('#settingsMenu .settings-section');
     const editor = $('mobileLayoutEditor');
+    const gpEditor = $('gamepadControlsEditor');
 
     if (deviceType === 'mobile') {
       if (keyboardSection) hide(keyboardSection);
-      if (editor) {
-        show(editor);
-        renderLayoutPreview();
-      }
+      if (editor) { show(editor); renderLayoutPreview(); }
+      if (gpEditor) hide(gpEditor);
     } else if (deviceType === 'gamepad') {
-      // Ni les touches PC ni le positionnement mobile ne s'appliquent à la manette
       if (keyboardSection) hide(keyboardSection);
       if (editor) hide(editor);
+      if (gpEditor) { show(gpEditor); refreshGamepadLabels(); }
     } else {
       if (keyboardSection) show(keyboardSection);
       if (editor) hide(editor);
+      if (gpEditor) hide(gpEditor);
     }
   }
 
@@ -1647,6 +1969,95 @@
     });
   }
 
+  /* --- Manette : éditeur de touches --- */
+
+  function buildGamepadControlsEditor() {
+    const settingsPanel = document.querySelector('#settingsMenu .panel');
+    if (!settingsPanel || $('gamepadControlsEditor')) return;
+
+    const div = document.createElement('div');
+    div.id = 'gamepadControlsEditor';
+    div.className = 'hidden';
+    div.innerHTML = `
+      <div class="gp-hint">CLIQUE SUR UN BOUTON PUIS APPUIE SUR LA MANETTE</div>
+      <div class="gp-row">
+        <span>AVANCER</span>
+        <button id="gpForwardBtn" class="secondary-button gp-key-button" data-action="forward">${gamepadButtonLabel(gamepadControls.forward)}</button>
+      </div>
+      <div class="gp-row">
+        <span>RECULER</span>
+        <button id="gpBackwardBtn" class="secondary-button gp-key-button" data-action="backward">${gamepadButtonLabel(gamepadControls.backward)}</button>
+      </div>
+      <div class="gp-row">
+        <span>BOOST</span>
+        <button id="gpBoostBtn" class="secondary-button gp-key-button" data-action="boost">${gamepadButtonLabel(gamepadControls.boost)}</button>
+      </div>
+      <div class="gp-row">
+        <span>MENU PAUSE</span>
+        <button id="gpPauseBtn" class="secondary-button gp-key-button" data-action="pause">${gamepadButtonLabel(gamepadControls.pause)}</button>
+      </div>
+      <button id="resetGamepadControlsBtn" class="secondary-button" style="width:100%; margin-top:14px;">RÉINITIALISER</button>
+    `;
+
+    const resetBtn = $('resetControlsButton');
+    if (resetBtn) {
+      resetBtn.insertAdjacentElement('afterend', div);
+    } else {
+      settingsPanel.appendChild(div);
+    }
+
+    const gpButtons = div.querySelectorAll('.gp-key-button');
+    gpButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        gpButtons.forEach(b => b.classList.remove('waiting'));
+        gamepadRebindAction = btn.dataset.action;
+        btn.classList.add('waiting');
+        btn.textContent = '...';
+        startGamepadRebindPolling();
+      });
+    });
+
+    $('resetGamepadControlsBtn').onclick = () => {
+      gamepadControls.forward = 7;
+      gamepadControls.backward = 6;
+      gamepadControls.boost = 0;
+      gamepadControls.pause = 9;
+      saveGamepadControls();
+      refreshGamepadLabels();
+      updateControlsLegend();
+    };
+  }
+
+  function startGamepadRebindPolling() {
+    if (gamepadRebindPollId) return;
+    gamepadRebindPollId = setInterval(() => {
+      if (!gamepadRebindAction) {
+        clearInterval(gamepadRebindPollId);
+        gamepadRebindPollId = null;
+        return;
+      }
+      const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+      let gp = null;
+      for (let i = 0; i < pads.length; i++) { if (pads[i]) { gp = pads[i]; break; } }
+      if (!gp) return;
+
+      for (let i = 0; i < gp.buttons.length; i++) {
+        const b = gp.buttons[i];
+        if (b && b.value > 0.5) {
+          gamepadControls[gamepadRebindAction] = i;
+          saveGamepadControls();
+          gamepadRebindAction = null;
+          document.querySelectorAll('.gp-key-button.waiting').forEach(b2 => b2.classList.remove('waiting'));
+          refreshGamepadLabels();
+          updateControlsLegend();
+          clearInterval(gamepadRebindPollId);
+          gamepadRebindPollId = null;
+          break;
+        }
+      }
+    }, 80);
+  }
+
   function initSettingsMenu() {
     const keyButtons = [
       { el: $('forwardKeyButton'), action: 'forward' },
@@ -1687,6 +2098,7 @@
     };
 
     buildMobileLayoutEditor();
+    buildGamepadControlsEditor();
 
     $('settingsBackButton').onclick = () => {
       hide($('settingsMenu'));
@@ -1724,7 +2136,7 @@
     const content = $('shopContent');
     if (!content) return;
     if (shopItems.length === 0) {
-      content.innerHTML = '<div class="shop-empty">RIEN POUR L\'INSTANT</div>';
+      content.innerHTML = '<div class="shop-empty">RIEN POUR L\\'INSTANT</div>';
       return;
     }
     content.innerHTML = '<div class="shop-list">' + shopItems.map(item => `
@@ -1859,6 +2271,7 @@
     }
     hide($('searchingOverlay'));
     showAdminFloatingUI();
+    hideMobileSettingsButton();
     show($('mainMenu'));
   }
 
@@ -2015,6 +2428,7 @@
     updatePointsDisplay();
     updatePauseMenuForMode();
     updateControlsLegend();
+    showMobileSettingsButtonIfNeeded();
 
     if (deviceType === 'mobile') buildMobileControls();
   }
@@ -2050,14 +2464,17 @@
     const stickY = gp.axes[1] || 0;
     const magnitude = Math.hypot(stickX, stickY);
 
-    const rt = gp.buttons[7] ? gp.buttons[7].value : 0; // R2
-    const lt = gp.buttons[6] ? gp.buttons[6].value : 0; // L2
-    const boostPressed = gp.buttons[0] ? gp.buttons[0].pressed : false; // Croix / X
+    const fwdBtn = gp.buttons[gamepadControls.forward];
+    const bwdBtn = gp.buttons[gamepadControls.backward];
+    const boostBtn = gp.buttons[gamepadControls.boost];
+    const pauseBtn = gp.buttons[gamepadControls.pause];
 
-    const throttle = clamp(rt - lt, -1, 1);
+    const fwdVal = fwdBtn ? fwdBtn.value : 0;
+    const bwdVal = bwdBtn ? bwdBtn.value : 0;
+    const boostPressed = boostBtn ? boostBtn.pressed : false;
+    const throttle = clamp(fwdVal - bwdVal, -1, 1);
 
-    // Pause via START/OPTIONS (index 9), avec détection de front montant
-    const startPressed = gp.buttons[9] ? gp.buttons[9].pressed : false;
+    const startPressed = pauseBtn ? pauseBtn.pressed : false;
     if (startPressed && !gamepadLastStartPressed && running) {
       togglePause();
     }
@@ -2772,246 +3189,4 @@
       ctx.fillStyle = '#7cf2ff';
       ctx.shadowColor = '#7cf2ff';
       ctx.shadowBlur = 14;
-      ctx.fill();
-      ctx.shadowBlur = 0;
-    }
-
-    ctx.fillStyle = '#111';
-    ctx.fillRect(-CAR_CFG.width / 2 + 3, -CAR_CFG.height / 2 - 3, 10, 4);
-    ctx.fillRect(-CAR_CFG.width / 2 + 3, CAR_CFG.height / 2 - 1, 10, 4);
-    ctx.fillRect(CAR_CFG.width / 2 - 13, -CAR_CFG.height / 2 - 3, 10, 4);
-    ctx.fillRect(CAR_CFG.width / 2 - 13, CAR_CFG.height / 2 - 1, 10, 4);
-
-    ctx.fillStyle = mainColor;
-    ctx.shadowColor = mainColor;
-    ctx.shadowBlur = 12;
-    ctx.beginPath();
-    ctx.moveTo(-CAR_CFG.width / 2, -CAR_CFG.height / 2 + 4);
-    ctx.lineTo(CAR_CFG.width / 2 - 6, -CAR_CFG.height / 2);
-    ctx.lineTo(CAR_CFG.width / 2, 0);
-    ctx.lineTo(CAR_CFG.width / 2 - 6, CAR_CFG.height / 2);
-    ctx.lineTo(-CAR_CFG.width / 2, CAR_CFG.height / 2 - 4);
-    ctx.closePath();
-    ctx.fill();
-    ctx.shadowBlur = 0;
-
-    ctx.fillStyle = darkColor;
-    ctx.fillRect(-CAR_CFG.width / 2 + 4, -3, CAR_CFG.width - 14, 6);
-
-    ctx.fillStyle = 'rgba(255,255,255,0.85)';
-    ctx.beginPath();
-    ctx.ellipse(2, 0, 8, CAR_CFG.height / 2 - 6, 0, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.restore();
-  }
-
-  function drawBall(ball) {
-    ctx.beginPath();
-    ctx.arc(ball.x, ball.y, BALL_CFG.radius, 0, Math.PI * 2);
-    ctx.fillStyle = '#ffffff';
-    ctx.shadowColor = '#ffffff';
-    ctx.shadowBlur = 10;
-    ctx.fill();
-    ctx.shadowBlur = 0;
-    ctx.strokeStyle = 'rgba(0,0,0,0.2)';
-    ctx.lineWidth = 1.5;
-    ctx.stroke();
-  }
-
-  function drawParticle(p) {
-    const alpha = Math.max(0, p.life / p.maxLife);
-    ctx.save();
-    ctx.globalAlpha = alpha;
-    ctx.beginPath();
-    ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-    ctx.fillStyle = p.color;
-    ctx.shadowColor = p.color;
-    ctx.shadowBlur = 8;
-    ctx.fill();
-    ctx.restore();
-  }
-
-  /* =====================================================
-     HUD
-  ===================================================== */
-
-  function updateHud() {
-    const myCar = world.cars[myPlayerNumber === 2 ? 1 : 0];
-    $('boostFill').style.width = myCar.boost + '%';
-    $('boostNumber').textContent = Math.round(myCar.boost);
-    $('speedNumber').textContent = Math.round(speedToKmh(myCar.speed || 0));
-  }
-
-  function updateBallSpeedDisplay() {
-    const el = $('ballSpeedNumber');
-    if (!el || !world) return;
-    const speed = speedToKmh(Math.hypot(world.ball.vx, world.ball.vy));
-    el.textContent = 'BALL: ' + Math.round(speed) + ' KM/H';
-  }
-
-  function updateScoreDisplay() {
-    $('blueScore').textContent = world.scoreBlue;
-    $('orangeScore').textContent = world.scoreOrange;
-  }
-
-  function updateStatsDisplay() {
-    if (!world) return;
-    $('statBlueGoals').textContent = world.stats.blue.goals;
-    $('statBlueTouches').textContent = world.stats.blue.touches;
-    $('statBlueSaves').textContent = world.stats.blue.saves;
-    $('statOrangeGoals').textContent = world.stats.orange.goals;
-    $('statOrangeTouches').textContent = world.stats.orange.touches;
-    $('statOrangeSaves').textContent = world.stats.orange.saves;
-  }
-
-  function updatePointsDisplay() {
-    if (!world || !myPlayerNumber) return;
-    const myTeam = teamOfPlayer(myPlayerNumber);
-    $('playerPoints').textContent = world.stats[myTeam].points;
-  }
-
-  function updateTimerDisplay() {
-    if (matchTimeLeft === Infinity) {
-      $('timer').textContent = '∞';
-      return;
-    }
-    const m = Math.floor(matchTimeLeft / 60);
-    const s = matchTimeLeft % 60;
-    $('timer').textContent = m + ':' + String(s).padStart(2, '0');
-  }
-
-  /* =====================================================
-     PAUSE
-  ===================================================== */
-
-  function togglePause() {
-    paused = !paused;
-    if (paused) show($('pauseMenu')); else hide($('pauseMenu'));
-  }
-
-  function updatePauseMenuForMode() {
-    const concedeBtn = $('concedeButton');
-    const mainMenuBtn = $('pauseMainMenuButton');
-    const cheatBtn = $('cheatSettingsMenuButton');
-
-    if (mode === 'online') {
-      show(concedeBtn);
-      hide(mainMenuBtn);
-      hide(cheatBtn);
-    } else {
-      hide(concedeBtn);
-      show(mainMenuBtn);
-      show(cheatBtn);
-    }
-  }
-
-  function initPauseMenu() {
-    const cheatBtn = document.createElement('button');
-    cheatBtn.id = 'cheatSettingsMenuButton';
-    cheatBtn.className = 'hidden';
-    cheatBtn.textContent = 'SETTINGS TRICHE';
-    $('concedeButton').insertAdjacentElement('afterend', cheatBtn);
-    cheatBtn.onclick = openCheatSettings;
-
-    $('resumeButton').onclick = () => { paused = false; hide($('pauseMenu')); };
-    $('pauseSettingsButton').onclick = () => openSettings('pauseMenu');
-    $('concedeButton').onclick = () => { hide($('pauseMenu')); show($('concedeConfirm')); };
-    $('pauseMainMenuButton').onclick = () => {
-      if (mode === 'online') return;
-      returnToMainMenu();
-    };
-
-    $('confirmConcedeButton').onclick = () => {
-      hide($('concedeConfirm'));
-      const winner = myPlayerNumber === 1 ? 'orange' : 'blue';
-      endMatch(winner);
-    };
-    $('cancelConcedeButton').onclick = () => {
-      hide($('concedeConfirm'));
-      show($('pauseMenu'));
-    };
-  }
-
-  /* =====================================================
-     FIN DE MATCH
-  ===================================================== */
-
-  function endMatch() {
-    stopGameLoop();
-    showResult(null, world.scoreBlue, world.scoreOrange);
-  }
-
-  function showResult(reason, scoreBlue, scoreOrange) {
-    let winnerText;
-    if (scoreBlue > scoreOrange) winnerText = 'BLUE WINS';
-    else if (scoreOrange > scoreBlue) winnerText = 'ORANGE WINS';
-    else winnerText = 'DRAW';
-
-    $('winnerDisplay').textContent = reason || winnerText;
-    $('finalBlueScore').textContent = scoreBlue;
-    $('finalOrangeScore').textContent = scoreOrange;
-    show($('resultScreen'));
-  }
-
-  function initResultScreen() {
-    $('playAgainButton').onclick = () => {
-      hide($('resultScreen'));
-      startMatch(mode);
-    };
-    $('mainMenuButton').onclick = () => {
-      hide($('resultScreen'));
-      returnToMainMenu();
-    };
-  }
-
-  function returnToMainMenu() {
-    stopGameLoop();
-    if (ws) { ws.close(); ws = null; }
-    hide($('pauseMenu'));
-    hide($('resultScreen'));
-    const mc = $('mobileControls');
-    if (mc) mc.remove();
-    showAdminFloatingUI();
-    show($('mainMenu'));
-  }
-
-  /* =====================================================
-     HOW TO PLAY
-  ===================================================== */
-
-  function initHowToPlay() {
-    if ($('backButton')) {
-      $('backButton').onclick = () => {
-        hide($('howToPlayMenu'));
-        show($('mainMenu'));
-      };
-    }
-  }
-
-  /* =====================================================
-     INITIALISATION
-  ===================================================== */
-
-  function init() {
-    loadControls();
-    loadMobileLayout();
-    loadAdminData();
-    loadProfileData();
-    injectDynamicStyles();
-    injectBallSpeedDisplay();
-    injectStatsBar();
-    injectAdminUI();
-    hide($('mainMenu'));
-    buildShopMenu();
-    buildCheatSettingsMenu();
-    buildSearchingOverlay();
-    initSettingsMenu();
-    initPauseMenu();
-    initResultScreen();
-    initHowToPlay();
-    buildDeviceMenu();
-  }
-
-  document.addEventListener('DOMContentLoaded', init);
-})();
+   
