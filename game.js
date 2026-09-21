@@ -3823,5 +3823,5 @@ content.querySelector('#sendCreditsNotifBtn').onclick = () => {
     buildDeviceMenu();
   }
 
-  document.addEventListener('DOMContentLoaded', init;
+  document.addEventListener('DOMContentLoaded', init);
 })();
