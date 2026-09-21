@@ -3824,4 +3824,4 @@ content.querySelector('#sendCreditsNotifBtn').onclick = () => {
   }
 
   document.addEventListener('DOMContentLoaded', init);
-})();
+}();
