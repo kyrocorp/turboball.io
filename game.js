@@ -1921,7 +1921,6 @@ content.querySelector('#sendCreditsNotifBtn').onclick = () => {
     content.querySelector('#adminMsgList')
   );
 };
-      };
     }
   }
 
