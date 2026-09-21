@@ -285,53 +285,73 @@ function showLiveNotificationToast(notification) {
     setTimeout(() => toast.remove(), 300);
   }, 5000);
 }
-
 function handleLiveNotificationsSync(serverList) {
   if (!Array.isArray(serverList)) return;
 
-  // Première synchronisation :
-  // on charge les notifications existantes sans afficher de popup.
-  if (!liveNotificationInitialized) {
-    serverList.forEach(notification => {
-      if (notification && notification.id) {
-        liveNotificationIds.add(notification.id);
-      }
-    });
+  const isFirstSync = !liveNotificationInitialized;
+  const incomingIds = new Set();
 
-    liveNotificationInitialized = true;
-    return;
-  }
+  serverList.forEach(notification => {
+    if (!notification || !notification.id) return;
 
-  serverList.forEach(serverNotification => {
-    if (!serverNotification || !serverNotification.id) return;
+    incomingIds.add(notification.id);
 
-    if (!liveNotificationIds.has(serverNotification.id)) {
-      liveNotificationIds.add(serverNotification.id);
-
-      const localNotification = {
-        id: serverNotification.id,
-        destination: serverNotification.destination || 'notification',
-        sender: serverNotification.sender || 'ÉQUIPE TURBOBALL',
-        title: serverNotification.title || 'Notification',
-        body: serverNotification.message || '',
-        date: serverNotification.createdAt
-          ? new Date(serverNotification.createdAt).toLocaleString('fr-FR')
-          : new Date().toLocaleString('fr-FR'),
-        credits: serverNotification.credits || 0,
-        claimed: false,
-        expiresAt: serverNotification.expiresAt || null
-      };
-
-      notifications.unshift(localNotification);
-
-      saveNotifications();
-      updateMailboxBadge();
-
-      showLiveNotificationToast(localNotification);
+    if (liveNotificationIds.has(notification.id)) {
+      return;
     }
-  });
-}
 
+    liveNotificationIds.add(notification.id);
+
+    // Lors de la première synchronisation,
+    // on récupère les notifications sans afficher
+    // de nouveau une alerte.
+    if (isFirstSync) {
+      return;
+    }
+
+    const localNotification = {
+      id: notification.id,
+
+      destination:
+        notification.destination || 'notification',
+
+      sender:
+        notification.sender || 'ÉQUIPE TURBOBALL',
+
+      title:
+        notification.title || 'Notification',
+
+      body:
+        notification.message ||
+        notification.body ||
+        '',
+
+      date:
+        notification.createdAt
+          ? new Date(notification.createdAt)
+              .toLocaleString('fr-FR')
+          : new Date()
+              .toLocaleString('fr-FR'),
+
+      credits:
+        Number(notification.credits) || 0,
+
+      claimed: false,
+
+      expiresAt:
+        notification.expiresAt || null
+    };
+
+    notifications.unshift(localNotification);
+
+    saveNotifications();
+    updateMailboxBadge();
+
+    showLiveNotificationToast(localNotification);
+  });
+
+  liveNotificationInitialized = true;
+}
 function scheduleLiveNotificationReconnect() {
   if (liveNotificationReconnectTimer) return;
 
