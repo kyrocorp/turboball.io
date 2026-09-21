@@ -392,6 +392,7 @@ function connectLiveNotificationSocket() {
     };
 
     liveNotificationSocket.onclose = () => {
+      console.log("❌ CONNEXION NOTIFICATIONS FERMÉE");
       liveNotificationSocket = null;
       scheduleLiveNotificationReconnect();
     };
