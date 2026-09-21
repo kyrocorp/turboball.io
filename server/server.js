@@ -303,43 +303,55 @@ wss.on("connection", ws => {
     // ==============================
     // AJOUTER UNE NOTIFICATION
     // ==============================
+if (data.type === "admin-add-notification") {
+  if (!data.notification) return;
 
-    if (data.type === "admin-add-notification") {
-      if (!data.notification) return;
+  const notification = {
+    id:
+      data.notification.id ||
+      "notification-" + nextNotificationId++,
 
-      const notification = {
-        id:
-          data.notification.id ||
-          "notification-" + nextNotificationId++,
+    title:
+      data.notification.title ||
+      "Notification",
 
-        title:
-          data.notification.title ||
-          "Notification",
+    message:
+      data.notification.message ||
+      data.notification.text ||
+      "",
 
-        message:
-          data.notification.message ||
-          data.notification.text ||
-          "",
+    destination:
+      data.notification.destination ||
+      "notification",
 
-        createdAt:
-          data.notification.createdAt ||
-          Date.now()
-      };
+    sender:
+      data.notification.sender ||
+      "ÉQUIPE TURBOBALL",
 
-      serverNotifications.unshift(notification);
+    credits:
+      Number(data.notification.credits) || 0,
 
-      console.log(
-        "Nouvelle notification :",
-        notification.title
-      );
+    expiresAt:
+      data.notification.expiresAt ||
+      null,
 
-      // Envoie immédiatement la notification
-      // à TOUS les utilisateurs connectés
-      broadcastNotifications();
+    createdAt:
+      data.notification.createdAt ||
+      Date.now()
+  };
 
-      return;
-    }
+  serverNotifications.unshift(notification);
 
+  console.log(
+    "Nouvelle notification :",
+    notification.title,
+    "| crédits :",
+    notification.credits
+  );
+
+  broadcastNotifications();
+  return;
+}
     // ==============================
     // SUPPRIMER UNE NOTIFICATION
     // ==============================
