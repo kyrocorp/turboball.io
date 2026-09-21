@@ -1921,9 +1921,6 @@ content.querySelector('#sendCreditsNotifBtn').onclick = () => {
     content.querySelector('#adminMsgList')
   );
 };
-    }
-  }
-
   function renderAdminShopList(container) {
     if (!container) return;
     if (shopItems.length === 0) {
