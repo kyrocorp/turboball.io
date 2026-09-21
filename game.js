@@ -361,6 +361,7 @@ function connectLiveNotificationSocket() {
     liveNotificationSocket = new WebSocket(NOTIFICATION_WS_URL);
 
     liveNotificationSocket.onopen = () => {
+      console.log("✅ CONNEXION NOTIFICATIONS RÉUSSIE");
       liveNotificationReconnectDelay = 1000;
 
       liveNotificationSocket.send(
