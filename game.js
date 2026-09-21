@@ -1804,33 +1804,103 @@ content.querySelector('#sendNotifBtn').onclick = () => {
           btn.classList.add('active');
         };
       });
+content.querySelector('#sendCreditsNotifBtn').onclick = () => {
+  const amount = parseInt(
+    content.querySelector('#notifCreditsAmount').value,
+    10
+  );
 
-      content.querySelector('#sendCreditsNotifBtn').onclick = () => {
-        const amount = parseInt(content.querySelector('#notifCreditsAmount').value, 10);
-        const title = content.querySelector('#notifCreditsTitle').value.trim();
-        const body = content.querySelector('#notifCreditsBody').value.trim();
-        const expiryVal = content.querySelector('#notifCreditsExpiry').value;
-        if (isNaN(amount) || amount <= 0 || !title || !body) return;
+  const title =
+    content.querySelector('#notifCreditsTitle').value.trim();
 
-        const expiryOption = CREDIT_EXPIRY_OPTIONS.find(o => o.value === expiryVal);
-        const expiresAt = expiryOption && expiryOption.ms ? Date.now() + expiryOption.ms : null;
+  const body =
+    content.querySelector('#notifCreditsBody').value.trim();
 
-        notifications.unshift({
-          id: 'notif_' + Date.now(),
-          destination: creditsNotifDestinationChoice,
-          sender: creditsNotifDestinationChoice === 'upcoming' ? 'ÉQUIPE TURBOBALL — À VENIR' : 'ÉQUIPE TURBOBALL',
-          title,
-          body,
-          date: new Date().toLocaleString('fr-FR'),
-          credits: amount,
-          claimed: false,
-          expiresAt
-        });
-        saveNotifications();
-        updateMailboxBadge();
+  const expiryVal =
+    content.querySelector('#notifCreditsExpiry').value;
 
-        content.querySelector('#notifCreditsAmount').value = '';
-        content.querySelector('#notifCreditsBody').value = '';
+  if (isNaN(amount) || amount <= 0 || !title || !body) {
+    return;
+  }
+
+  const expiryOption =
+    CREDIT_EXPIRY_OPTIONS.find(
+      o => o.value === expiryVal
+    );
+
+  const expiresAt =
+    expiryOption && expiryOption.ms
+      ? Date.now() + expiryOption.ms
+      : null;
+
+  const notification = {
+    id: 'notif_' + Date.now(),
+
+    destination:
+      creditsNotifDestinationChoice,
+
+    sender:
+      creditsNotifDestinationChoice === 'upcoming'
+        ? 'ÉQUIPE TURBOBALL — À VENIR'
+        : 'ÉQUIPE TURBOBALL',
+
+    title,
+    body,
+
+    date:
+      new Date().toLocaleString('fr-FR'),
+
+    credits: amount,
+
+    claimed: false,
+
+    expiresAt,
+
+    createdAt: Date.now()
+  };
+
+  notifications.unshift(notification);
+
+  liveNotificationIds.add(notification.id);
+
+  saveNotifications();
+  updateMailboxBadge();
+
+  sendAdminNotificationToServer({
+    id: notification.id,
+
+    title: notification.title,
+
+    message: notification.body,
+
+    destination:
+      notification.destination,
+
+    sender:
+      notification.sender,
+
+    credits:
+      notification.credits,
+
+    expiresAt:
+      notification.expiresAt,
+
+    createdAt:
+      notification.createdAt
+  });
+
+  content.querySelector(
+    '#notifCreditsAmount'
+  ).value = '';
+
+  content.querySelector(
+    '#notifCreditsBody'
+  ).value = '';
+
+  renderAdminMsgList(
+    content.querySelector('#adminMsgList')
+  );
+};
       };
     }
   }
