@@ -1688,31 +1688,55 @@ window.addEventListener('beforeunload', () => {
           destButtons.forEach(b => b.classList.remove('active'));
           btn.classList.add('active');
         };
-      });
+      })
+content.querySelector('#sendNotifBtn').onclick = () => {
+  const destination = notifDestinationChoice;
+  const title = content.querySelector('#notifTitle').value.trim();
+  const body = content.querySelector('#notifBody').value.trim();
 
-      content.querySelector('#sendNotifBtn').onclick = () => {
-        const destination = notifDestinationChoice;
-        const title = content.querySelector('#notifTitle').value.trim();
-        const body = content.querySelector('#notifBody').value.trim();
-        if (!title || !body) return;
-        notifications.unshift({
-          id: 'notif_' + Date.now(),
-          destination,
-          sender: destination === 'upcoming' ? 'ÉQUIPE TURBOBALL — À VENIR' : 'ÉQUIPE TURBOBALL',
-          title,
-          body,
-          date: new Date().toLocaleString('fr-FR'),
-          credits: 0,
-          claimed: false,
-          expiresAt: null
-        });
-        saveNotifications();
-        updateMailboxBadge();
-        content.querySelector('#notifTitle').value = '';
-        content.querySelector('#notifBody').value = '';
-        renderAdminMsgList(content.querySelector('#adminMsgList'));
-      };
+  if (!title || !body) return;
 
+  const notification = {
+    id: 'notif_' + Date.now(),
+    destination,
+    sender:
+      destination === 'upcoming'
+        ? 'ÉQUIPE TURBOBALL — À VENIR'
+        : 'ÉQUIPE TURBOBALL',
+    title,
+    body,
+    date: new Date().toLocaleString('fr-FR'),
+    credits: 0,
+    claimed: false,
+    expiresAt: null,
+    createdAt: Date.now()
+  };
+
+  notifications.unshift(notification);
+
+  liveNotificationIds.add(notification.id);
+
+  saveNotifications();
+  updateMailboxBadge();
+
+  sendAdminNotificationToServer({
+    id: notification.id,
+    title: notification.title,
+    message: notification.body,
+    destination: notification.destination,
+    sender: notification.sender,
+    credits: 0,
+    expiresAt: null,
+    createdAt: notification.createdAt
+  });
+
+  content.querySelector('#notifTitle').value = '';
+  content.querySelector('#notifBody').value = '';
+
+  renderAdminMsgList(
+    content.querySelector('#adminMsgList')
+  );
+};
       renderAdminMsgList(content.querySelector('#adminMsgList'));
 
     } else if (adminActiveTab === 'argent') {
