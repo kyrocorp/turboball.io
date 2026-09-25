@@ -1534,7 +1534,7 @@
   function renderAdminShopList(container) {
     if (!container) return;
     if (shopItems.length === 0) {
-      container.innerHTML = '<div class="shop-empty">AUCUN ARTICLE POUR L\\'INSTANT</div>';
+      container.innerHTML = '<div class="shop-empty">AUCUN ARTICLE POUR L\'INSTANT</div>';
       return;
     }
     container.innerHTML = shopItems.map(item => `
