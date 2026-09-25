@@ -193,307 +193,7 @@
   let careerStats = { games: 0, goals: 0, saves: 0, touches: 0 };
   let careerTrackPrev = { goals: 0, saves: 0, touches: 0 };
   let creditsBalance = 100;
-// =====================================================
-// NOTIFICATIONS EN DIRECT - SERVEUR RENDER
-// =====================================================
 
-let liveNotificationSocket = null;
-let liveNotificationReconnectTimer = null;
-let liveNotificationReconnectDelay = 1000;
-let liveNotificationInitialized = false;
-const liveNotificationIds = new Set();
-
-const NOTIFICATION_WS_URL = SERVER_URL;
-
-function escapeNotificationHTML(value) {
-  return String(value ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
-}
-
-function showLiveNotificationToast(notification) {
-  let container = document.getElementById('liveNotificationToastContainer');
-
-  if (!container) {
-    container = document.createElement('div');
-    container.id = 'liveNotificationToastContainer';
-
-    container.style.cssText = `
-      position: fixed;
-      top: 65px;
-      right: 15px;
-      z-index: 99999;
-      width: min(360px, calc(100vw - 30px));
-      pointer-events: none;
-    `;
-
-    document.body.appendChild(container);
-  }
-
-  const toast = document.createElement('div');
-
-  toast.style.cssText = `
-    background: rgba(5, 15, 28, 0.96);
-    border: 1px solid rgba(66, 207, 255, 0.65);
-    border-radius: 12px;
-    padding: 14px;
-    margin-bottom: 10px;
-    color: white;
-    box-shadow: 0 0 25px rgba(0, 191, 255, 0.25);
-    font-family: inherit;
-    pointer-events: auto;
-    animation: liveNotifIn 0.25s ease;
-  `;
-
-  toast.innerHTML = `
-    <div style="
-      font-size:9px;
-      letter-spacing:2px;
-      color:#43d9ff;
-      margin-bottom:6px;
-    ">
-      NOUVELLE NOTIFICATION
-    </div>
-
-    <div style="
-      font-size:14px;
-      font-weight:bold;
-      margin-bottom:6px;
-    ">
-      ${escapeNotificationHTML(notification.title)}
-    </div>
-
-    <div style="
-      font-size:11px;
-      line-height:1.5;
-      color:#b9c8d8;
-    ">
-      ${escapeNotificationHTML(notification.message)}
-    </div>
-  `;
-
-  container.appendChild(toast);
-
-  setTimeout(() => {
-    toast.style.opacity = '0';
-    toast.style.transform = 'translateX(20px)';
-    toast.style.transition = '0.25s ease';
-
-    setTimeout(() => toast.remove(), 300);
-  }, 5000);
-}
-function handleLiveNotificationsSync(serverList) {
-  if (!Array.isArray(serverList)) return;
-
-  const isFirstSync = !liveNotificationInitialized;
-  const incomingIds = new Set();
-
-  serverList.forEach(notification => {
-    if (!notification || !notification.id) return;
-
-    incomingIds.add(notification.id);
-
-    if (liveNotificationIds.has(notification.id)) {
-      return;
-    }
-
-    liveNotificationIds.add(notification.id);
-
-    // Lors de la première synchronisation,
-    // on récupère les notifications sans afficher
-    // de nouveau une alerte.
-    if (isFirstSync) {
-      return;
-    }
-
-    const localNotification = {
-      id: notification.id,
-
-      destination:
-        notification.destination || 'notification',
-
-      sender:
-        notification.sender || 'ÉQUIPE TURBOBALL',
-
-      title:
-        notification.title || 'Notification',
-
-      body:
-        notification.message ||
-        notification.body ||
-        '',
-
-      date:
-        notification.createdAt
-          ? new Date(notification.createdAt)
-              .toLocaleString('fr-FR')
-          : new Date()
-              .toLocaleString('fr-FR'),
-
-      credits:
-        Number(notification.credits) || 0,
-
-      claimed: false,
-
-      expiresAt:
-        notification.expiresAt || null
-    };
-
-    notifications.unshift(localNotification);
-
-    saveNotifications();
-    updateMailboxBadge();
-
-    showLiveNotificationToast(localNotification);
-  });
-
-  liveNotificationInitialized = true;
-}
-function scheduleLiveNotificationReconnect() {
-  if (liveNotificationReconnectTimer) return;
-
-  liveNotificationReconnectTimer = setTimeout(() => {
-    liveNotificationReconnectTimer = null;
-    connectLiveNotificationSocket();
-  }, liveNotificationReconnectDelay);
-
-  liveNotificationReconnectDelay = Math.min(
-    liveNotificationReconnectDelay * 2,
-    30000
-  );
-}
-
-function connectLiveNotificationSocket() {
-  if (
-    liveNotificationSocket &&
-    (
-      liveNotificationSocket.readyState === WebSocket.OPEN ||
-      liveNotificationSocket.readyState === WebSocket.CONNECTING
-    )
-  ) {
-    return;
-  }
-
-  try {
-    liveNotificationSocket = new WebSocket(NOTIFICATION_WS_URL);
-
-    liveNotificationSocket.onopen = () => {
-      console.log("✅ CONNEXION NOTIFICATIONS RÉUSSIE");
-      liveNotificationReconnectDelay = 1000;
-
-      liveNotificationSocket.send(
-        JSON.stringify({
-          type: 'get-notifications'
-        })
-      );
-    };
-
-    liveNotificationSocket.onmessage = event => {
-      let data;
-
-      try {
-        data = JSON.parse(event.data);
-      } catch (e) {
-        return;
-      }
-
-      if (data.type === 'notifications-sync') {
-        handleLiveNotificationsSync(data.notifications);
-      }
-    };
-
-    liveNotificationSocket.onerror = () => {
-      try {
-        liveNotificationSocket.close();
-      } catch (e) {}
-    };
-
-    liveNotificationSocket.onclose = () => {
-      console.log("❌ CONNEXION NOTIFICATIONS FERMÉE");
-      liveNotificationSocket = null;
-      scheduleLiveNotificationReconnect();
-    };
-
-  } catch (e) {
-    scheduleLiveNotificationReconnect();
-  }
-}
-
-function sendAdminNotificationToServer(notification) {
-  const send = () => {
-    if (
-      !liveNotificationSocket ||
-      liveNotificationSocket.readyState !== WebSocket.OPEN
-    ) {
-      return false;
-    }
-
-    liveNotificationSocket.send(
-      JSON.stringify({
-        type: 'admin-add-notification',
-        notification: {
-          id: notification.id,
-          title: notification.title,
-          message: notification.message,
-          destination: notification.destination,
-          sender: notification.sender,
-          credits: notification.credits || 0,
-          expiresAt: notification.expiresAt || null,
-          createdAt: notification.createdAt || Date.now()
-        }
-      })
-    );
-
-    return true;
-  };
-
-  if (send()) return;
-
-  connectLiveNotificationSocket();
-
-  let attempts = 0;
-
-  const retry = setInterval(() => {
-    attempts++;
-
-    if (send() || attempts >= 20) {
-      clearInterval(retry);
-    }
-  }, 250);
-}
-
-function deleteAdminNotificationFromServer(id) {
-  if (
-    !liveNotificationSocket ||
-    liveNotificationSocket.readyState !== WebSocket.OPEN
-  ) {
-    return;
-  }
-
-  liveNotificationSocket.send(
-    JSON.stringify({
-      type: 'admin-delete-notification',
-      id
-    })
-  );
-}
-
-connectLiveNotificationSocket();
-
-window.addEventListener('beforeunload', () => {
-  if (liveNotificationReconnectTimer) {
-    clearTimeout(liveNotificationReconnectTimer);
-  }
-
-  if (liveNotificationSocket) {
-    try {
-      liveNotificationSocket.close();
-    } catch (e) {}
-  }
-});
   /* =====================================================
      UTILITAIRES
   ===================================================== */
@@ -1710,55 +1410,31 @@ window.addEventListener('beforeunload', () => {
           destButtons.forEach(b => b.classList.remove('active'));
           btn.classList.add('active');
         };
-      })
-content.querySelector('#sendNotifBtn').onclick = () => {
-  const destination = notifDestinationChoice;
-  const title = content.querySelector('#notifTitle').value.trim();
-  const body = content.querySelector('#notifBody').value.trim();
+      });
 
-  if (!title || !body) return;
+      content.querySelector('#sendNotifBtn').onclick = () => {
+        const destination = notifDestinationChoice;
+        const title = content.querySelector('#notifTitle').value.trim();
+        const body = content.querySelector('#notifBody').value.trim();
+        if (!title || !body) return;
+        notifications.unshift({
+          id: 'notif_' + Date.now(),
+          destination,
+          sender: destination === 'upcoming' ? 'ÉQUIPE TURBOBALL — À VENIR' : 'ÉQUIPE TURBOBALL',
+          title,
+          body,
+          date: new Date().toLocaleString('fr-FR'),
+          credits: 0,
+          claimed: false,
+          expiresAt: null
+        });
+        saveNotifications();
+        updateMailboxBadge();
+        content.querySelector('#notifTitle').value = '';
+        content.querySelector('#notifBody').value = '';
+        renderAdminMsgList(content.querySelector('#adminMsgList'));
+      };
 
-  const notification = {
-    id: 'notif_' + Date.now(),
-    destination,
-    sender:
-      destination === 'upcoming'
-        ? 'ÉQUIPE TURBOBALL — À VENIR'
-        : 'ÉQUIPE TURBOBALL',
-    title,
-    body,
-    date: new Date().toLocaleString('fr-FR'),
-    credits: 0,
-    claimed: false,
-    expiresAt: null,
-    createdAt: Date.now()
-  };
-
-  notifications.unshift(notification);
-
-  liveNotificationIds.add(notification.id);
-
-  saveNotifications();
-  updateMailboxBadge();
-
-  sendAdminNotificationToServer({
-    id: notification.id,
-    title: notification.title,
-    message: notification.body,
-    destination: notification.destination,
-    sender: notification.sender,
-    credits: 0,
-    expiresAt: null,
-    createdAt: notification.createdAt
-  });
-
-  content.querySelector('#notifTitle').value = '';
-  content.querySelector('#notifBody').value = '';
-
-  renderAdminMsgList(
-    content.querySelector('#adminMsgList')
-  );
-};
       renderAdminMsgList(content.querySelector('#adminMsgList'));
 
     } else if (adminActiveTab === 'argent') {
@@ -1824,107 +1500,41 @@ content.querySelector('#sendNotifBtn').onclick = () => {
           btn.classList.add('active');
         };
       });
-content.querySelector('#sendCreditsNotifBtn').onclick = () => {
-  const amount = parseInt(
-    content.querySelector('#notifCreditsAmount').value,
-    10
-  );
 
-  const title =
-    content.querySelector('#notifCreditsTitle').value.trim();
+      content.querySelector('#sendCreditsNotifBtn').onclick = () => {
+        const amount = parseInt(content.querySelector('#notifCreditsAmount').value, 10);
+        const title = content.querySelector('#notifCreditsTitle').value.trim();
+        const body = content.querySelector('#notifCreditsBody').value.trim();
+        const expiryVal = content.querySelector('#notifCreditsExpiry').value;
+        if (isNaN(amount) || amount <= 0 || !title || !body) return;
 
-  const body =
-    content.querySelector('#notifCreditsBody').value.trim();
+        const expiryOption = CREDIT_EXPIRY_OPTIONS.find(o => o.value === expiryVal);
+        const expiresAt = expiryOption && expiryOption.ms ? Date.now() + expiryOption.ms : null;
 
-  const expiryVal =
-    content.querySelector('#notifCreditsExpiry').value;
+        notifications.unshift({
+          id: 'notif_' + Date.now(),
+          destination: creditsNotifDestinationChoice,
+          sender: creditsNotifDestinationChoice === 'upcoming' ? 'ÉQUIPE TURBOBALL — À VENIR' : 'ÉQUIPE TURBOBALL',
+          title,
+          body,
+          date: new Date().toLocaleString('fr-FR'),
+          credits: amount,
+          claimed: false,
+          expiresAt
+        });
+        saveNotifications();
+        updateMailboxBadge();
 
-  if (isNaN(amount) || amount <= 0 || !title || !body) {
-    return;
+        content.querySelector('#notifCreditsAmount').value = '';
+        content.querySelector('#notifCreditsBody').value = '';
+      };
+    }
   }
 
-  const expiryOption =
-    CREDIT_EXPIRY_OPTIONS.find(
-      o => o.value === expiryVal
-    );
-
-  const expiresAt =
-    expiryOption && expiryOption.ms
-      ? Date.now() + expiryOption.ms
-      : null;
-
-  const notification = {
-    id: 'notif_' + Date.now(),
-
-    destination:
-      creditsNotifDestinationChoice,
-
-    sender:
-      creditsNotifDestinationChoice === 'upcoming'
-        ? 'ÉQUIPE TURBOBALL — À VENIR'
-        : 'ÉQUIPE TURBOBALL',
-
-    title,
-    body,
-
-    date:
-      new Date().toLocaleString('fr-FR'),
-
-    credits: amount,
-
-    claimed: false,
-
-    expiresAt,
-
-    createdAt: Date.now()
-  };
-
-  notifications.unshift(notification);
-
-  liveNotificationIds.add(notification.id);
-
-  saveNotifications();
-  updateMailboxBadge();
-
-  sendAdminNotificationToServer({
-    id: notification.id,
-
-    title: notification.title,
-
-    message: notification.body,
-
-    destination:
-      notification.destination,
-
-    sender:
-      notification.sender,
-
-    credits:
-      notification.credits,
-
-    expiresAt:
-      notification.expiresAt,
-
-    createdAt:
-      notification.createdAt
-  });
-
-  content.querySelector(
-    '#notifCreditsAmount'
-  ).value = '';
-
-  content.querySelector(
-    '#notifCreditsBody'
-  ).value = '';
-
-  renderAdminMsgList(
-    content.querySelector('#adminMsgList')
-  );
-};
   function renderAdminShopList(container) {
     if (!container) return;
     if (shopItems.length === 0) {
-      container.innerHTML = '<div class="shop-empty">AUCUN ARTICLE POUR L\'INSTANT</div>';
+      container.innerHTML = '<div class="shop-empty">AUCUN ARTICLE POUR L\\'INSTANT</div>';
       return;
     }
     container.innerHTML = shopItems.map(item => `
@@ -2090,7 +1700,7 @@ content.querySelector('#sendCreditsNotifBtn').onclick = () => {
     const filtered = notifications.filter(n => n.destination === mailboxActiveTab);
 
     if (filtered.length === 0) {
-      content.innerHTML = '<div class="notif-empty">AUCUN MESSAGE POUR L\'INSTANT</div>';
+      content.innerHTML = '<div class="notif-empty">AUCUN MESSAGE POUR L\\'INSTANT</div>';
       return;
     }
 
@@ -2526,7 +2136,7 @@ content.querySelector('#sendCreditsNotifBtn').onclick = () => {
     const content = $('shopContent');
     if (!content) return;
     if (shopItems.length === 0) {
-      content.innerHTML = '<div class="shop-empty">RIEN POUR L\'INSTANT</div>';
+      content.innerHTML = '<div class="shop-empty">RIEN POUR L\\'INSTANT</div>';
       return;
     }
     content.innerHTML = '<div class="shop-list">' + shopItems.map(item => `
