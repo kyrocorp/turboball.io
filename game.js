@@ -1700,7 +1700,7 @@
     const filtered = notifications.filter(n => n.destination === mailboxActiveTab);
 
     if (filtered.length === 0) {
-      content.innerHTML = '<div class="notif-empty">AUCUN MESSAGE POUR L\\'INSTANT</div>';
+      content.innerHTML = '<div class="notif-empty">AUCUN MESSAGE POUR L\'INSTANT</div>';
       return;
     }
 
